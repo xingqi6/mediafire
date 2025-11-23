@@ -325,6 +325,23 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
             time.sleep(0.8)
             
             logger.info("✓ 表单填写完成")
+            
+            # 验证填写是否成功
+            if first_name_input.get_attribute("value") != first_name:
+                logger.error("First Name 填写验证失败")
+                return False
+            if last_name_input.get_attribute("value") != last_name:
+                logger.error("Last Name 填写验证失败")
+                return False
+            if email_input.get_attribute("value") != email:
+                logger.error("Email 填写验证失败")
+                return False
+            if password_input.get_attribute("value") != password:
+                logger.error("Password 填写验证失败")
+                return False
+            
+            logger.info("✓ 表单填写验证通过")
+            
         except Exception as e:
             logger.error(f"填写表单时出错: {e}")
             return False
@@ -346,48 +363,101 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
             logger.error("无法定位提交按钮")
             return False
         
+        # 提交前检查是否有验证码
+        time.sleep(1)
+        if "recaptcha" in driver.page_source.lower() or "captcha" in driver.page_source.lower():
+            logger.error("⚠ 检测到人机验证(CAPTCHA),无法自动处理")
+            driver.save_screenshot(f"captcha_detected_{int(time.time())}.png")
+            return False
+        
         logger.info("点击提交按钮")
-        submit_btn.click()
+        try:
+            submit_btn.click()
+            logger.info("✓ 提交按钮已点击")
+        except Exception as e:
+            logger.error(f"点击提交按钮失败: {e}")
+            # 尝试使用 JavaScript 点击
+            try:
+                driver.execute_script("arguments[0].click();", submit_btn)
+                logger.info("✓ 使用 JS 点击提交按钮成功")
+            except Exception as e2:
+                logger.error(f"JS 点击也失败: {e2}")
+                return False
         
         # ========== 步骤4: 等待注册结果 ==========
         logger.info("等待注册结果...")
+        time.sleep(5)  # 等待提交处理
+        
+        final_url = driver.current_url
+        logger.info(f"提交后 URL: {final_url}")
+        
+        # 判断是否成功(URL 必须发生变化,离开注册页面)
+        if "registration.php" in final_url:
+            logger.warning("⚠ 仍停留在注册页面,检查错误信息")
+            
+            # 保存失败时的页面
+            driver.save_screenshot(f"fail_still_on_reg_{int(time.time())}.png")
+            save_page_source(driver, f"fail_still_on_reg_{int(time.time())}.html")
+            
+            # 查找错误提示
+            try:
+                error_selectors = [
+                    "//div[contains(@class, 'error')]",
+                    "//span[contains(@class, 'error')]",
+                    "//p[contains(@class, 'error')]",
+                    "//*[@id='error']",
+                    "//div[contains(@class, 'alert')]",
+                    "//*[contains(text(), 'already')]",
+                    "//*[contains(text(), 'invalid')]",
+                    "//*[contains(text(), 'required')]",
+                ]
+                
+                for selector in error_selectors:
+                    elements = driver.find_elements(By.XPATH, selector)
+                    if elements:
+                        for elem in elements:
+                            if elem.is_displayed() and elem.text.strip():
+                                logger.error(f"页面错误信息: {elem.text}")
+                
+            except Exception as e:
+                logger.debug(f"查找错误信息失败: {e}")
+            
+            logger.error(f"✗ 注册失败: {email} - 提交后未跳转")
+            return False
+        
+        # 等待跳转到成功页面
         try:
-            WebDriverWait(driver, 40).until(
+            WebDriverWait(driver, 30).until(
                 EC.any_of(
                     EC.url_contains("myfiles"),
                     EC.url_contains("dashboard"),
                     EC.url_contains("welcome"),
+                    EC.url_contains("home"),
                     EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Welcome')]")),
-                    EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Success')]")),
                 )
             )
             
             final_url = driver.current_url
-            logger.info(f"注册成功! 最终 URL: {final_url}")
+            logger.info(f"✓ 注册成功! 最终 URL: {final_url}")
             logger.info(f"✓ 账号 {email} 注册完成")
+            
+            # 保存成功截图
+            driver.save_screenshot(f"success_{int(time.time())}.png")
             return True
             
         except TimeoutException:
             final_url = driver.current_url
-            logger.info(f"超时,最终 URL: {final_url}")
+            logger.info(f"等待超时,最终 URL: {final_url}")
             
             # 检查是否需要邮箱验证
             page_text = driver.page_source.lower()
-            if any(keyword in page_text for keyword in ["verify", "verification", "confirmation", "check your email"]):
+            if any(keyword in page_text for keyword in ["verify", "verification", "confirmation", "check your email", "check email"]):
                 logger.warning(f"⚠ 账号 {email} 已注册,需要邮箱验证")
+                driver.save_screenshot(f"verify_needed_{int(time.time())}.png")
                 return True
             
-            # 检查错误信息
-            try:
-                error_elements = driver.find_elements(By.XPATH, "//*[contains(@class, 'error')]")
-                if error_elements:
-                    error_msg = error_elements[0].text
-                    logger.error(f"注册错误: {error_msg}")
-            except:
-                pass
-            
-            logger.error(f"注册失败: {email}")
-            driver.save_screenshot(f"error_timeout_{int(time.time())}.png")
+            logger.error(f"✗ 注册失败: {email} - 未检测到成功标识")
+            driver.save_screenshot(f"error_no_success_{int(time.time())}.png")
             return False
     
     except Exception as e:
