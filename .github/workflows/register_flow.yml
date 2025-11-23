@@ -1,0 +1,43 @@
+# .github/workflows/register_flow.yml
+name: MediaFire 批量注册流
+
+on:
+  # 可以选择手动触发，或者根据您的需求设置为定时任务
+  workflow_dispatch:
+    inputs:
+      # 手动输入运行次数，也可以写死在 env 中
+      count:
+        description: '重复注册的次数'
+        required: true
+        default: '5'
+      
+jobs:
+  batch_registration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🐍 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: ⚙️ 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 🚀 执行注册脚本
+        # 设置所有需要的环境变量
+        env:
+          # ----------------- 可公开配置的 URL 和次数 -----------------
+          MAIL_LOGIN_URL: 'https://mail.928090.xyz/'
+          MEDIAFIRE_REGISTER_URL: 'https://www.mediafire.com/?nnfhfnh'
+          REGISTRATION_COUNT: ${{ github.event.inputs.count }} # 使用手动输入的次数
+
+          # ----------------- 敏感信息 (来自 Secrets) -----------------
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          ACCOUNT_PASSWORD: ${{ secrets.ACCOUNT_PASSWORD }}
+
+        run: python main.py
