@@ -12,28 +12,30 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-def log(msg: str):
+def log(msg: str) -> None:
+    """简单日志输出"""
     print(f"[MEDIAFIRE-REGISTER] {msg}", flush=True)
 
 
 def generate_random_name() -> str:
+    """生成随机名称"""
     first = ''.join(random.choices(string.ascii_letters, k=6))
     last = ''.join(random.choices(string.ascii_letters, k=7))
     return f"{first} {last}"
 
 
 def create_driver() -> webdriver.Chrome:
-    """创建无头 Chrome（适配 GitHub Actions / Linux）"""
+    """创建适配 GitHub Actions / Linux 的无头 Chrome"""
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1280,720")
+
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
 
-    # 关键：交给 webdriver-manager 管理驱动，避免版本不匹配[web:45][web:49]
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()),
         options=chrome_options,
@@ -42,26 +44,30 @@ def create_driver() -> webdriver.Chrome:
     return driver
 
 
-def wait(driver, by, value, timeout=20):
+def wait(driver: webdriver.Chrome, by, value: str, timeout: int = 20):
+    """封装显式等待"""
     return WebDriverWait(driver, timeout).until(
         EC.presence_of_element_located((by, value))
     )
 
 
 def register_one_account(email: str, password: str, ref_link: str) -> bool:
+    """注册单个 MediaFire 账号，成功返回 True"""
     driver = None
     try:
         log(f"开始注册邮箱：{email}")
         driver = create_driver()
 
+        # 打开邀请链接
         driver.get(ref_link)
 
-        # 下面这些定位需要你按实际页面调整
+        # 下面几行元素定位需要你根据实际注册页面的 name/id 做微调
         email_input = wait(driver, By.NAME, "email", timeout=30)
         name_input = wait(driver, By.NAME, "full_name", timeout=30)
         password_input = wait(driver, By.NAME, "password", timeout=30)
 
         full_name = generate_random_name()
+
         email_input.clear()
         email_input.send_keys(email)
 
@@ -71,13 +77,17 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
         password_input.clear()
         password_input.send_keys(password)
 
+        # 提交按钮：如有不同，请改 CSS 选择器
         submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
         submit_btn.click()
 
+        # 等待注册成功后的页面/提示
         WebDriverWait(driver, 40).until(
             EC.any_of(
                 EC.url_contains("myfiles"),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Welcome')]")),
+                EC.presence_of_element_located(
+                    (By.XPATH, "//*[contains(text(),'Welcome')]")
+                ),
             )
         )
 
@@ -105,6 +115,30 @@ def main():
     email_list_raw = os.getenv("EMAIL_LIST", "").strip()
 
     if not ref_link:
+        raise RuntimeError("环境变量 MEDIAFIRE_REF_LINK 未设置")
+    if not password:
+        raise RuntimeError("环境变量 MEDIAFIRE_PASSWORD 未设置")
+    if not email_list_raw:
+        raise RuntimeError("环境变量 EMAIL_LIST 未设置")
+
+    emails = [e.strip() for e in email_list_raw.split(",") if e.strip()]
+    if not emails:
+        raise RuntimeError("EMAIL_LIST 中没有有效邮箱")
+
+    log(f"即将注册 {len(emails)} 个账号")
+    success = 0
+
+    for email in emails:
+        ok = register_one_account(email, password, ref_link)
+        if ok:
+            success += 1
+        time.sleep(5)
+
+    log(f"全部完成：成功 {success}/{len(emails)}")
+
+
+if __name__ == "__main__":
+    main()    if not ref_link:
         raise RuntimeError("环境变量 MEDIAFIRE_REF_LINK 未设置")
     if not password:
         raise RuntimeError("环境变量 MEDIAFIRE_PASSWORD 未设置")
