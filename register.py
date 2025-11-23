@@ -22,8 +22,9 @@ def generate_random_name():
 options = Options()
 options.headless = True  # 无头模式
 
-# 使用 webdriver-manager 来自动下载并配置 chromedriver
-driver_service = Service(ChromeDriverManager().install())
+# 如果有下载 chromedriver，使用本地路径
+chromedriver_path = "/path/to/your/chromedriver"  # 修改为你上传的 chromedriver 路径
+driver_service = Service(chromedriver_path)
 driver = webdriver.Chrome(service=driver_service, options=options)
 
 # 注册账号函数
