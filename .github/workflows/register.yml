@@ -18,10 +18,16 @@ jobs:
         with:
           python-version: '3.11'
 
+      # 可选：如果上面的 libasound2t64 版本还有问题，可以先把整个 Install system libs 步骤删掉试一下
       - name: Install system libs
         run: |
           sudo apt-get update
-          sudo apt-get install -y libnss3 libgconf-2-4 libxi6 libxcursor1 libxcomposite1 libasound2
+          sudo apt-get install -y \
+            libnss3 \
+            libxi6 \
+            libxcursor1 \
+            libxcomposite1 \
+            libasound2t64
 
       - name: Install dependencies
         run: |
