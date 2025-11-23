@@ -48,5 +48,5 @@ def register_account(email):
 for email in email_list:
     register_account(email)
 
-# 完成后关闭浏览器
+# 完成后关闭浏览器1
 driver.quit()
