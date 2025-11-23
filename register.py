@@ -33,6 +33,7 @@ def create_driver() -> webdriver.Chrome:
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1280,720")
 
+    # 降低被检测为自动化的概率（可选）
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
 
@@ -61,7 +62,8 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
         # 打开邀请链接
         driver.get(ref_link)
 
-        # 下面几行元素定位需要你根据实际注册页面的 name/id 做微调
+        # 以下元素定位需要你根据实际页面 F12 检查后微调
+        # 这里先按常见 name 写法示例
         email_input = wait(driver, By.NAME, "email", timeout=30)
         name_input = wait(driver, By.NAME, "full_name", timeout=30)
         password_input = wait(driver, By.NAME, "password", timeout=30)
@@ -77,11 +79,11 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
         password_input.clear()
         password_input.send_keys(password)
 
-        # 提交按钮：如有不同，请改 CSS 选择器
+        # 提交按钮：如果实际页面不同，改这个选择器
         submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
         submit_btn.click()
 
-        # 等待注册成功后的页面/提示
+        # 等待注册成功后的页面或提示
         WebDriverWait(driver, 40).until(
             EC.any_of(
                 EC.url_contains("myfiles"),
@@ -105,6 +107,41 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
         return False
 
     finally:
+        if driver:
+            driver.quit()
+
+
+def main():
+    ref_link = os.getenv("MEDIAFIRE_REF_LINK", "").strip()
+    password = os.getenv("MEDIAFIRE_PASSWORD", "").strip()
+    email_list_raw = os.getenv("EMAIL_LIST", "").strip()
+
+    if not ref_link:
+        raise RuntimeError("环境变量 MEDIAFIRE_REF_LINK 未设置")
+    if not password:
+        raise RuntimeError("环境变量 MEDIAFIRE_PASSWORD 未设置")
+    if not email_list_raw:
+        raise RuntimeError("环境变量 EMAIL_LIST 未设置")
+
+    emails = [e.strip() for e in email_list_raw.split(",") if e.strip()]
+    if not emails:
+        raise RuntimeError("EMAIL_LIST 中没有有效邮箱")
+
+    log(f"即将注册 {len(emails)} 个账号")
+    success = 0
+
+    for email in emails:
+        ok = register_one_account(email, password, ref_link)
+        if ok:
+            success += 1
+        # 轻微延时，防止触发风控
+        time.sleep(5)
+
+    log(f"全部完成：成功 {success}/{len(emails)}")
+
+
+if __name__ == "__main__":
+    main()    finally:
         if driver:
             driver.quit()
 
