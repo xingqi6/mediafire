@@ -90,8 +90,26 @@ def wait_element(
         )
         return element
     except TimeoutException:
-        logger.warning(f"等待元素超时: {by}={value}")
+        logger.debug(f"等待元素超时: {by}={value}")
         return None
+
+
+def wait_and_click(
+    driver: webdriver.Chrome,
+    by: By,
+    value: str,
+    timeout: int = 20
+) -> bool:
+    """等待元素可点击并点击"""
+    try:
+        element = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable((by, value))
+        )
+        element.click()
+        return True
+    except TimeoutException:
+        logger.debug(f"等待可点击元素超时: {by}={value}")
+        return False
 
 
 def safe_find_element(
@@ -105,7 +123,7 @@ def safe_find_element(
     """
     for by, value in strategies:
         try:
-            element = wait_element(driver, by, value, timeout=15)
+            element = wait_element(driver, by, value, timeout=10)
             if element:
                 logger.debug(f"成功定位元素: {by}={value}")
                 return element
@@ -113,6 +131,39 @@ def safe_find_element(
             logger.debug(f"定位策略失败 {by}={value}: {e}")
             continue
     return None
+
+
+def click_sign_up_button(driver: webdriver.Chrome) -> bool:
+    """
+    点击 BASIC 套餐的 SIGN UP 按钮
+    :return: 点击成功返回 True
+    """
+    logger.info("正在查找 BASIC 套餐的 SIGN UP 按钮")
+    
+    # 多种定位策略
+    strategies = [
+        # 通过按钮文本定位
+        (By.XPATH, "//button[contains(text(), 'SIGN UP')]"),
+        # 通过包含 "Ad-supported" 的区域内的按钮
+        (By.XPATH, "//div[contains(text(), 'Ad-supported')]//ancestor::div[contains(@class, 'plan') or contains(@class, 'card')]//button"),
+        # 通过 BASIC 相关文本定位
+        (By.XPATH, "//h3[contains(text(), 'BASIC')]//following::button[1]"),
+        # 直接查找所有 SIGN UP 按钮(取最后一个,通常是 BASIC)
+        (By.XPATH, "(//button[contains(text(), 'SIGN UP')])[last()]"),
+    ]
+    
+    for by, value in strategies:
+        try:
+            if wait_and_click(driver, by, value, timeout=10):
+                logger.info("✓ 成功点击 SIGN UP 按钮")
+                time.sleep(2)  # 等待页面跳转
+                return True
+        except Exception as e:
+            logger.debug(f"点击策略失败 {by}={value}: {e}")
+            continue
+    
+    logger.error("✗ 无法找到 SIGN UP 按钮")
+    return False
 
 
 def register_one_account(email: str, password: str, ref_link: str) -> bool:
@@ -129,67 +180,124 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
         logger.info(f"开始注册账号: {email}")
         driver = create_driver()
         
-        # 打开邀请注册链接
-        logger.info(f"正在访问注册页面: {ref_link}")
+        # ========== 第一步: 访问邀请链接并选择套餐 ==========
+        logger.info(f"正在访问邀请链接: {ref_link}")
         driver.get(ref_link)
         time.sleep(3)  # 等待页面完全加载
         
-        # 多策略定位邮箱输入框
+        # 检查是否在套餐选择页面
+        if "upgrade" in driver.current_url or "Choose the plan" in driver.page_source:
+            logger.info("检测到套餐选择页面,准备点击 BASIC 套餐")
+            
+            # 点击 BASIC 套餐的 SIGN UP 按钮
+            if not click_sign_up_button(driver):
+                logger.error("无法点击 SIGN UP 按钮,尝试继续...")
+        
+        # ========== 第二步: 填写注册表单 ==========
+        time.sleep(3)  # 等待注册表单加载
+        logger.info(f"当前页面 URL: {driver.current_url}")
+        
+        # 检查是否到达注册表单页面
+        if "registration" not in driver.current_url:
+            logger.warning("未能跳转到注册页面,尝试直接访问注册链接")
+            # 构造注册链接
+            if "?" in ref_link:
+                registration_url = ref_link.replace("/upgrade/", "/upgrade/registration.php/") + "&pid=free"
+            else:
+                registration_url = ref_link.replace("/upgrade/", "/upgrade/registration.php/") + "?pid=free"
+            
+            logger.info(f"尝试访问: {registration_url}")
+            driver.get(registration_url)
+            time.sleep(3)
+        
+        # 定位表单元素 - First Name
+        first_name_input = safe_find_element(driver, [
+            (By.NAME, "first_name"),
+            (By.ID, "first_name"),
+            (By.XPATH, "//input[@placeholder='First Name']"),
+            (By.CSS_SELECTOR, "input[type='text']")
+        ])
+        
+        if not first_name_input:
+            logger.error("无法定位 First Name 输入框")
+            return False
+        
+        # 定位表单元素 - Last Name
+        last_name_input = safe_find_element(driver, [
+            (By.NAME, "last_name"),
+            (By.ID, "last_name"),
+            (By.XPATH, "//input[@placeholder='Last Name']"),
+        ])
+        
+        if not last_name_input:
+            logger.error("无法定位 Last Name 输入框")
+            return False
+        
+        # 定位表单元素 - Email
         email_input = safe_find_element(driver, [
             (By.NAME, "email"),
             (By.ID, "email"),
             (By.CSS_SELECTOR, "input[type='email']"),
-            (By.XPATH, "//input[@placeholder='Email' or @placeholder='email']")
+            (By.XPATH, "//input[@placeholder='Email']")
         ])
         
         if not email_input:
             logger.error("无法定位邮箱输入框")
             return False
         
-        # 多策略定位姓名输入框
-        name_input = safe_find_element(driver, [
-            (By.NAME, "full_name"),
-            (By.NAME, "name"),
-            (By.ID, "full_name"),
-            (By.XPATH, "//input[@placeholder='Full Name' or @placeholder='Name']")
-        ])
-        
-        if not name_input:
-            logger.error("无法定位姓名输入框")
-            return False
-        
-        # 多策略定位密码输入框
+        # 定位表单元素 - Password
         password_input = safe_find_element(driver, [
             (By.NAME, "password"),
             (By.ID, "password"),
             (By.CSS_SELECTOR, "input[type='password']"),
-            (By.XPATH, "//input[@placeholder='Password' or @placeholder='password']")
+            (By.XPATH, "//input[@placeholder='Password']")
         ])
         
         if not password_input:
             logger.error("无法定位密码输入框")
             return False
         
-        # 生成并填写随机全名
+        # 生成随机姓名
         full_name = generate_random_name()
+        first_name, last_name = full_name.split()
+        
         logger.info(f"填写注册信息: 姓名={full_name}, 邮箱={email}")
+        
+        # 填写表单
+        first_name_input.clear()
+        first_name_input.send_keys(first_name)
+        time.sleep(0.5)
+        
+        last_name_input.clear()
+        last_name_input.send_keys(last_name)
+        time.sleep(0.5)
         
         email_input.clear()
         email_input.send_keys(email)
-        time.sleep(0.5)
-        
-        name_input.clear()
-        name_input.send_keys(full_name)
         time.sleep(0.5)
         
         password_input.clear()
         password_input.send_keys(password)
         time.sleep(0.5)
         
-        # 多策略定位提交按钮
+        # 勾选同意条款复选框
+        try:
+            checkbox = safe_find_element(driver, [
+                (By.XPATH, "//input[@type='checkbox']"),
+                (By.CSS_SELECTOR, "input[type='checkbox']")
+            ])
+            if checkbox and not checkbox.is_selected():
+                checkbox.click()
+                logger.info("已勾选服务条款")
+                time.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"勾选条款复选框失败: {e}")
+        
+        # 点击提交按钮
         submit_btn = safe_find_element(driver, [
+            (By.XPATH, "//button[contains(text(), 'CREATE ACCOUNT')]"),
+            (By.XPATH, "//button[contains(text(), 'CONTINUE')]"),
             (By.CSS_SELECTOR, "button[type='submit']"),
-            (By.XPATH, "//button[contains(text(), 'Sign Up') or contains(text(), 'Register')]"),
             (By.XPATH, "//input[@type='submit']")
         ])
         
@@ -200,13 +308,14 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
         logger.info("点击注册按钮")
         submit_btn.click()
         
-        # 等待注册结果(多种成功标识)
+        # ========== 第三步: 等待注册结果 ==========
         logger.info("等待注册结果...")
         try:
             WebDriverWait(driver, 45).until(
                 EC.any_of(
-                    EC.url_contains("myfiles"),  # 跳转到文件页面
-                    EC.url_contains("dashboard"),  # 跳转到仪表板
+                    EC.url_contains("myfiles"),
+                    EC.url_contains("dashboard"),
+                    EC.url_contains("welcome"),
                     EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Welcome') or contains(text(),'welcome')]")),
                     EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Success') or contains(text(),'success')]"))
                 )
@@ -218,7 +327,7 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
             # 检查是否需要邮箱验证
             if driver.find_elements(By.XPATH, "//*[contains(text(),'verify') or contains(text(),'Verify') or contains(text(),'confirmation')]"):
                 logger.warning(f"⚠ 账号 {email} 需要邮箱验证,请手动完成验证")
-                return True  # 虽需验证但注册请求已提交
+                return True
             
             # 检查是否有错误提示
             error_elements = driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(text(), 'Error')]")
@@ -227,13 +336,14 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
                 logger.error(f"注册失败: {email} - 错误信息: {error_msg}")
             else:
                 logger.error(f"注册超时: {email} - 未检测到成功标识")
+                logger.info(f"最终页面 URL: {driver.current_url}")
             
             return False
     
     except Exception as e:
         logger.error(f"✗ 注册失败: {email} - 异常: {str(e)}")
         
-        # 失败时保存截图用于调试
+        # 失败时保存截图
         try:
             if driver:
                 screenshot_name = f"error_{email.replace('@', '_at_')}_{int(time.time())}.png"
@@ -245,7 +355,6 @@ def register_one_account(email: str, password: str, ref_link: str) -> bool:
         return False
     
     finally:
-        # 确保驱动正常退出
         if driver:
             try:
                 driver.quit()
