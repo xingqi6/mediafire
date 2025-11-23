@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 可选：如果上面的 libasound2t64 版本还有问题，可以先把整个 Install system libs 步骤删掉试一下
+      # 系统依赖（针对当前 ubuntu 24.04，去掉了不可用包）
       - name: Install system libs
         run: |
           sudo apt-get update
