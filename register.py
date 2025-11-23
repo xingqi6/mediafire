@@ -3,13 +3,14 @@ import random
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager  # 使用 webdriver-manager 来自动下载 chromedriver
 
 # 获取环境变量
 mediafire_ref_link = os.getenv("MEDIAFIRE_REF_LINK")
 mediafire_password = os.getenv("MEDIAFIRE_PASSWORD")
 email_list = os.getenv("EMAIL_LIST").split(",")  # 获取邮箱列表
-driver_path = '/usr/local/bin/chromedriver'  # chromedriver路径
 
 # 随机生成名字
 def generate_random_name():
@@ -20,7 +21,10 @@ def generate_random_name():
 # 设置 Chrome 选项
 options = Options()
 options.headless = True  # 无头模式
-driver = webdriver.Chrome(executable_path=driver_path, options=options)
+
+# 使用 webdriver-manager 来自动下载并配置 chromedriver
+driver_service = Service(ChromeDriverManager().install())
+driver = webdriver.Chrome(service=driver_service, options=options)
 
 # 注册账号函数
 def register_account(email):
